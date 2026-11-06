@@ -7,6 +7,7 @@
 //     items/{id}           one stroke or note: type, uid, color, size, pts | text/x/y, ts
 //     live/{uid}           the stroke someone is drawing right now
 //     presence/{uid}       name, color, cursor x/y, at
+//     background           img (PNG or JPEG data URL), w, h, name, at: the picture or PDF page behind the board
 import {
   db,
   equalTo,
@@ -79,6 +80,10 @@ export async function startBoard(uid, { title, requireApproval }) {
 export const setMeta = (code, patch) => update(at(code, 'meta'), patch);
 export const clearBoard = (code) => update(at(code), { items: null, live: null });
 export const deleteBoard = (code) => remove(at(code));
+
+// The picture or PDF page behind the board. `img` is a PNG or JPEG data URL; the rules cap its length.
+export const setBackground = (code, { img, w, h, name }) => set(at(code, 'background'), { img, w, h, ...(name ? { name } : {}), at: serverTimestamp() });
+export const clearBackground = (code) => remove(at(code, 'background'));
 
 // ---- Admin: students ------------------------------------------------------------------------
 

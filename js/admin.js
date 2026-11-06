@@ -1,6 +1,8 @@
 // Admin page. Without ?code it lists the boards this browser started and lets you start another.
 // With a code it runs that board: the roster, admitting and removing students, locking, clearing, saving.
 import { buildRoster } from './access.js';
+import { parseBackground } from './background.js';
+import { showBackgroundDialog } from './background-dialog.js';
 import { createBoard } from './board.js';
 import { admitStudent, deleteBoard, getMeta, letBackIn, removeStudent, setMeta, setViewOnly, startBoard, watch } from './db.js';
 import { signIn } from './firebase.js';
@@ -148,6 +150,7 @@ function runBoard(uid, firstMeta) {
   let here = new Map();
   let leaving = false;
   let rosterQueued = false;
+  let background = null;
 
   const board = createBoard({
     stage: $('#stage'),
@@ -185,6 +188,10 @@ function runBoard(uid, firstMeta) {
     watch(code, 'banned', (value) => {
       banned = value ?? {};
       queueRoster();
+    }),
+    watch(code, 'background', (value) => {
+      background = parseBackground(value);
+      board.setBackground(background);
     }),
   ];
 
@@ -361,6 +368,8 @@ function runBoard(uid, firstMeta) {
   });
 
   $('#show-code').addEventListener('click', () => showCodeDialog());
+  $('#show-qr').addEventListener('click', () => showCodeDialog());
+  $('#background-button').addEventListener('click', () => showBackgroundDialog({ code, current: background }));
 
   $('#save-image').addEventListener('click', async () => {
     const blob = await board.exportPng();
@@ -371,7 +380,7 @@ function runBoard(uid, firstMeta) {
   $('#clear-board').addEventListener('click', async () => {
     const { ok } = await confirmDialog({
       title: 'Clear the whole board?',
-      body: 'This removes every drawing and note, including students’ work. You can’t undo it.',
+      body: `This removes every drawing and note, including students’ work.${background ? ' The background stays.' : ''} You can’t undo it.`,
       confirmLabel: 'Clear board',
       danger: true,
     });
@@ -402,7 +411,10 @@ function runBoard(uid, firstMeta) {
     }
   });
 
-  function showCodeDialog() {
+  // The code, and a QR code for the same join link, large enough to read from the back of a room.
+  async function showCodeDialog() {
+    const link = joinLink(code);
+    const { qrSvg } = await import('./qr.js');
     const dialog = el(
       'dialog',
       { class: 'dialog dialog-wide', 'aria-labelledby': 'code-dialog-title' },
@@ -410,10 +422,25 @@ function runBoard(uid, firstMeta) {
         'form',
         { method: 'dialog' },
         el('h2', { id: 'code-dialog-title' }, 'Join this board'),
-        el('p', {}, 'Go to this address and enter the code:'),
-        el('p', { class: 'join-url' }, pageUrl('./')),
-        el('p', { class: 'code code-huge', translate: 'no' }, formatCode(code)),
-        el('div', { class: 'dialog-actions' }, el('button', { class: 'btn btn-primary', value: 'close', autofocus: true }, 'Done')),
+        el(
+          'div',
+          { class: 'join-share' },
+          el('div', { class: 'qr', html: qrSvg(link, { label: `QR code for joining ${meta.title}` }) }),
+          el(
+            'div',
+            { class: 'join-share-text' },
+            el('p', {}, 'Scan the QR code with a camera, or go to'),
+            el('p', { class: 'join-url' }, pageUrl('./')),
+            el('p', {}, 'and enter the code'),
+            el('p', { class: 'code code-huge', translate: 'no' }, formatCode(code)),
+          ),
+        ),
+        el(
+          'div',
+          { class: 'dialog-actions' },
+          el('button', { class: 'btn', type: 'button', onclick: async () => toast((await copyText(link)) ? 'Join link copied' : 'Couldn’t copy. Select the link and copy it by hand.') }, 'Copy link'),
+          el('button', { class: 'btn btn-primary', value: 'close', autofocus: true }, 'Done'),
+        ),
       ),
     );
     dialog.addEventListener('close', () => dialog.remove());

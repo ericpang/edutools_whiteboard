@@ -3,6 +3,7 @@
 //
 // Two canvases are stacked: `base` holds what is saved, `live` holds strokes still being drawn (yours
 // and other people's) plus the eraser ring. Cursors and the note editor are ordinary elements on top.
+import { fitContain } from './background.js';
 import { addItem, announce, clearBoard, leave, moveCursor, removeItem, setLive, watchChildren, watchConnection } from './db.js';
 import { FONT_STACK, drawItem, drawStroke, textFont } from './render.js';
 import { LINE_HEIGHT, MAX_PAIRS, MIN_STEP, chunkPoints, encodePoints, itemHits, parseItem, thinPoints } from './strokes.js';
@@ -33,6 +34,8 @@ export function createBoard({ stage, code, uid, name, isOwner = false, onError =
 
   // ---- Layout -------------------------------------------------------------------------------
 
+  // The picture or PDF page behind everything, if the admin set one. Strokes sit on top and the eraser never touches it.
+  const backdrop = el('img', { class: 'backdrop', alt: '', hidden: true, draggable: 'false' });
   const baseCanvas = el('canvas', { class: 'layer' });
   const liveCanvas = el('canvas', {
     class: 'layer layer-live',
@@ -49,7 +52,7 @@ export function createBoard({ stage, code, uid, name, isOwner = false, onError =
     maxlength: String(TEXT_MAX),
     'aria-label': 'Type your note, then press Enter to add it',
   });
-  const surface = el('div', { class: 'surface', 'data-tool': 'pen' }, baseCanvas, liveCanvas, cursorLayer, hint, editor);
+  const surface = el('div', { class: 'surface', 'data-tool': 'pen' }, backdrop, baseCanvas, liveCanvas, cursorLayer, hint, editor);
   const frame = el('div', { class: 'frame' }, surface);
   stage.replaceChildren(frame);
 
@@ -68,9 +71,10 @@ export function createBoard({ stage, code, uid, name, isOwner = false, onError =
     const availH = stage.clientHeight - parseFloat(outer.paddingTop) - parseFloat(outer.paddingBottom) - parseFloat(inner.paddingTop) - parseFloat(inner.paddingBottom);
     if (availW < 80 || availH < 45) return;
 
-    const width = Math.floor(Math.min(availW, (availH * BOARD_W) / BOARD_H));
-    const height = Math.floor((width * BOARD_H) / BOARD_W);
-    if (width === cssW && height === cssH) return;
+    // Whole multiples of 16 keep the board exactly 16:9, so a 16:9 picture fills it with no hairline gap at the edge.
+    const width = Math.floor(Math.min(availW, (availH * BOARD_W) / BOARD_H) / 16) * 16;
+    const height = (width * BOARD_H) / BOARD_W;
+    if (width < 64 || (width === cssW && height === cssH)) return;
     cssW = width;
     cssH = height;
 
@@ -107,6 +111,7 @@ export function createBoard({ stage, code, uid, name, isOwner = false, onError =
   let liveDirty = true;
   let frameId = 0;
   let ready = false;
+  let background = null; // { img, w, h } or null
 
   const others = new Map(); // uid -> stroke someone else is drawing
   const people = new Map(); // uid -> presence
@@ -177,7 +182,7 @@ export function createBoard({ stage, code, uid, name, isOwner = false, onError =
   }
 
   function updateHint() {
-    const empty = ready && items.size === 0 && !stroke && !editing;
+    const empty = ready && items.size === 0 && !stroke && !editing && !background;
     hint.hidden = !empty;
     if (empty) hint.textContent = ability.canDraw ? 'Pick a marker and start drawing.' : 'Nothing here yet. Drawings appear as soon as someone makes them.';
   }
@@ -558,13 +563,40 @@ export function createBoard({ stage, code, uid, name, isOwner = false, onError =
     for (const person of people.values()) paintCursor(person);
   }
 
-  function exportPng() {
+  function setBackground(next) {
+    background = next;
+    if (next) {
+      // Give the picture its own box, so a page that doesn't fill the board has an edge you can see.
+      const { x, y, w, h } = fitContain(next.w, next.h);
+      Object.assign(backdrop.style, {
+        left: `${(x / BOARD_W) * 100}%`,
+        top: `${(y / BOARD_H) * 100}%`,
+        width: `${(w / BOARD_W) * 100}%`,
+        height: `${(h / BOARD_H) * 100}%`,
+      });
+      if (backdrop.getAttribute('src') !== next.img) backdrop.src = next.img;
+      backdrop.hidden = false;
+    } else {
+      backdrop.hidden = true;
+      backdrop.removeAttribute('src');
+    }
+    updateHint();
+  }
+
+  async function exportPng() {
     const canvas = document.createElement('canvas');
     canvas.width = BOARD_W;
     canvas.height = BOARD_H;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, BOARD_W, BOARD_H);
+    if (background) {
+      await backdrop.decode().catch(() => {});
+      if (backdrop.naturalWidth > 0) {
+        const { x, y, w, h } = fitContain(backdrop.naturalWidth, backdrop.naturalHeight);
+        ctx.drawImage(backdrop, x, y, w, h);
+      }
+    }
     for (const id of ids()) drawItem(ctx, items.get(id));
     return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   }
@@ -620,6 +652,7 @@ export function createBoard({ stage, code, uid, name, isOwner = false, onError =
     undo,
     setAbility,
     setOwner,
+    setBackground,
     exportPng,
     clear: () => clearBoard(code),
     destroy,

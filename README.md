@@ -10,23 +10,25 @@ It is one of the EduTools classroom apps and follows their conventions: static p
 
 **Students**
 
-- Join with a code or link and a display name. No account needed.
+- Join by scanning a QR code, or with a code or link, and a display name. No account needed.
 - Pen, eraser, text, ten marker colors and three sizes, plus undo for their last drawing.
 - See everyone's strokes appear live, even while they are still being drawn, with named cursors and a row of who is here.
+- See the picture or PDF page the teacher put behind the board, and write on top of it.
 - Refreshing the page keeps their place, because the anonymous identity survives a reload.
 - Mouse, touch and stylus all work. Shortcuts: `P` pen, `E` eraser, `T` text, `1` `2` `3` sizes, `Ctrl+Z` undo.
 
 **Admin**
 
-- Start a board and get its code and join link. The code can be shown in large type for a projector.
+- Start a board and get its code and join link. The code and a QR code for the link can be shown in large type for a projector, so students can scan it from their seats.
 - See a live roster of students, who is online, and who is waiting.
 - **Add** students by admitting them. Each student's identity is created in their own browser, so the admin admits people who arrive with the code rather than creating accounts. With *Approve new students* on, new arrivals wait until the admin lets them in.
 - **Remove** a student at any time. This blocks their browser from rejoining, can delete their drawings too, and can be undone with *Let back in*.
 - Make one student view-only, or **lock** the whole board so only the admin can draw.
 - Erase anything, or clear the board.
-- Save the board as a PNG, and delete it when the lesson is over.
+- Put a picture or a PDF page behind the board. Everyone writes on top of it, and neither the eraser nor *Clear board* touches it. Replace or remove it at any time.
+- Save the board as a PNG, background included, and delete it when the lesson is over.
 
-Not in the first version: shapes and lines, image paste, multiple pages, per-group boards, QR join codes, PDF export.
+Not in the first version: shapes and lines, image paste, multiple pages (a PDF is used one page at a time), per-group boards, PDF export.
 
 ## How it works
 
@@ -47,12 +49,15 @@ whiteboards/{CODE}
 ├── banned/{uid}       name, at; removed students can no longer read or write the board
 ├── items/{id}         one stroke or note: type, author uid, color, size, pts | text/x/y, ts
 ├── live/{uid}         preview of the stroke being drawn right now, deleted once saved
-└── presence/{uid}     name, color, cursor x/y, at; cleared on disconnect
+├── presence/{uid}     name, color, cursor x/y, at; cleared on disconnect
+└── background         img (PNG or JPEG data URL), w, h, name, at; the picture or PDF page behind the board
 ```
 
 Board codes are six characters with no look-alikes (no `0`, `1`, `I`, `L` or `O`), the same format the `mindmaps` and `worlds` rules already enforce.
 
 A stroke's points are stored as one compact string (`"x,y x,y …"`) rather than an array, because Realtime Database turns arrays into numbered child nodes, which is slow and bulky for hundreds of points. A very long stroke is split into pieces that join up.
+
+The background is prepared in the admin's browser and stored as one data URL. A picture is fitted inside 2560 × 1440 (never enlarged), a PDF page is drawn at that size, and the result is saved as whichever of PNG or JPEG is smaller, then shrunk until it fits the 1.5 MB cap the rules enforce. It is shown whole and centered on the 16:9 board, so a portrait page keeps its shape with room on either side.
 
 ### Roles
 
@@ -62,6 +67,7 @@ A stroke's points are stored as one compact string (`"x,y x,y …"`) rather than
 | Draw and write | Yes | Yes, unless the board is locked or they are view-only | No |
 | Erase | Anything | Their own work | No |
 | Lock the board, clear it | Yes | No | No |
+| Set, change or remove the background | Yes | No | No |
 | Admit, remove, set view-only | Yes | No | No |
 | Delete the board | Yes | No | No |
 
@@ -71,13 +77,14 @@ A stroke's points are stored as one compact string (`"x,y x,y …"`) rather than
 |---|---|
 | `index.html`, `admin.html`, `student.html` | Landing page, admin console, student view |
 | `css/styles.css` | All styles |
-| `assets/` | Favicon and the self-hosted fonts (Shantell Sans and Atkinson Hyperlegible, both under the SIL Open Font License; the licenses sit next to them) |
+| `assets/` | Favicon, the self-hosted fonts (Shantell Sans and Atkinson Hyperlegible, both under the SIL Open Font License), and `vendor/`, the third-party code listed under [Third-party code](#third-party-code). Licenses sit next to the files |
 | [`js/config.js`](js/config.js), [`js/firebase.js`](js/firebase.js) | Firebase web config, and the SDK loaded from the CDN with anonymous sign-in and the `?emulator` switch |
 | `js/db.js` | Everything the app sends to Firebase; the paths are documented at the top |
 | `js/board.js` | The shared canvas: drawing, erasing, notes, live strokes, cursors |
 | `js/tray.js` | The marker tray: tools, colors, sizes and keyboard shortcuts |
+| `js/background-dialog.js`, `js/background-prep.js` | The admin's Background dialog, and the code that opens a picture or PDF and prepares it for the database |
 | `js/admin.js`, `js/student.js`, `js/index.js` | One controller per page |
-| `js/access.js`, `js/strokes.js`, `js/util.js` | Pure logic, with no DOM or Firebase, covered by the unit tests |
+| `js/access.js`, `js/strokes.js`, `js/background.js`, `js/qr.js`, `js/util.js` | Pure logic, with no DOM or Firebase, covered by the unit tests |
 | `js/render.js`, `js/ui.js`, `js/nav.js`, `js/storage.js`, `js/icons.js`, `js/code-form.js`, `js/doodle.js` | Canvas drawing and small helpers |
 | [`database.rules.json`](database.rules.json) | Security rules for every EduTools app, including `whiteboards` |
 | [`firebase.json`](firebase.json) | Rules file location and emulator ports (Auth `9099`, Database `9000`, UI off) |
@@ -95,6 +102,7 @@ A stroke's points are stored as one compact string (`"x,y x,y …"`) rather than
 - let a student read the board only once they are `active` and not banned, and write only their own strokes, only while the board is unlocked and they are not view-only;
 - stop a student admitting themselves, giving themselves `viewOnly`, or rewriting their record to shake off a restriction;
 - keep every stroke and note well-formed: lowercase hex colors, bounded sizes and coordinates, a size cap on points and text, server timestamps, no unknown fields;
+- keep the background to a PNG or JPEG data URL under 1.5 MB, writable only by the owner and readable only by admitted students;
 - let only the owner remove, block or unblock anyone, clear the board or delete it.
 
 Removal takes effect at once. A removed browser's writes are refused, and the server also cuts off the board connection it already had open (checked on the emulator).
@@ -166,4 +174,15 @@ Anonymous sign-in must be enabled in the Firebase project (Authentication, Sign-
 - **The code is the key.** Anyone who has a board's code can watch it. Boards can't be listed and codes are hard to guess, but start a new board for each class. Boards don't expire on their own, so delete them when you're done.
 - **Capacity.** On Firebase's free Spark plan the Realtime Database allows [100 simultaneous connections](https://firebase.google.com/docs/database/usage/limits) for the whole database, and every open tab counts as one. That is plenty for one class, but several classes using any of the EduTools apps at the same moment share that pool.
 - **Privacy.** There are no accounts or e-mail addresses. The only personal detail the app asks for is the display name a student types, and the browser remembers nothing about students. An admin's browser remembers the codes and names of the boards it started.
+- **Backgrounds are stored in the database**, about 1 MB at most each, and go when the board is deleted. A PDF is used one page at a time; to use a different page, choose the PDF again. A portrait page is shown whole at the board's height, so small print can be hard to read on a small screen. Landscape slides and pictures fill the board.
+- **PDFs are opened in the admin's browser** with pdf.js, which is served from this site and loaded only when a PDF is chosen, so students never download it.
 - **Fonts are self-hosted**, so students' browsers make no requests to Google Fonts.
+
+## Third-party code
+
+Served from this site, never from a CDN, and kept in [`assets/vendor`](assets/vendor) with their licenses:
+
+- [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 2.0.4 (MIT) draws the join QR code.
+- [pdf.js](https://github.com/mozilla/pdf.js) 6.5.438 (Apache-2.0) opens PDFs. It comes with WebAssembly decoders for scanned pages and character maps for older Chinese, Japanese and Korean PDFs.
+
+The one thing loaded from a CDN is the Firebase SDK (Google's), pinned in `js/firebase.js`. To update either library, see `assets/vendor/README.txt`.

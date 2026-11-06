@@ -75,9 +75,10 @@
 
       <div class="code-chip">
         <span class="code-label">Join code</span>
-        <button class="code-button" id="show-code" type="button" title="Show the code in large type">
+        <button class="code-button" id="show-code" type="button" title="Show the code and QR code in large type">
           <span class="code" id="code" translate="no"></span>
         </button>
+        <button class="btn btn-small btn-icon" id="show-qr" type="button" aria-label="Show QR code" title="Show QR code" data-icon="qr" data-icon-size="18"></button>
         <button class="btn btn-small" id="copy-link" type="button" data-icon="copy" data-icon-size="18">Copy link</button>
       </div>
 
@@ -117,6 +118,7 @@
         </div>
 
         <footer class="panel-foot">
+          <button class="btn" id="background-button" type="button" data-icon="image" data-icon-size="18">Background…</button>
           <button class="btn" id="save-image" type="button" data-icon="download" data-icon-size="18">Save as image</button>
           <button class="btn" id="clear-board" type="button" data-icon="eraser" data-icon-size="18">Clear board</button>
           <button class="btn btn-danger-quiet" id="delete-board" type="button" data-icon="trash" data-icon-size="18">Delete board</button>

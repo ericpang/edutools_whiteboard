@@ -465,3 +465,82 @@ describe('removal takes effect', () => {
     await assertSucceeds(at('carl', 'items').once('value'));
   });
 });
+
+describe('the background picture', () => {
+  const PNG = `data:image/png;base64,${'A'.repeat(100)}`;
+  const JPEG = `data:image/jpeg;base64,${'/9j/'.repeat(25)}`;
+  const picture = (over = {}) => ({ img: PNG, w: 1600, h: 900, name: 'Worksheet', at: TS, ...over });
+
+  beforeEach(() => seed(board({ banned: { carl: { name: 'Carl', at: 1300 } } })));
+
+  test('the admin can set it, replace it and take it away', async () => {
+    await assertSucceeds(at('teacher', 'background').set(picture()));
+    const { name, ...unnamed } = picture({ img: JPEG });
+    await assertSucceeds(at('teacher', 'background').set(unnamed));
+    await assertSucceeds(at('teacher', 'background').remove());
+  });
+
+  test('students cannot set, change or clear it', async () => {
+    await assertFails(at('alex', 'background').set(picture()));
+    await assertFails(at('bea', 'background').set(picture()));
+    await at('teacher', 'background').set(picture());
+    await assertFails(at('alex', 'background/img').set(JPEG));
+    await assertFails(at('alex', 'background').remove());
+  });
+
+  test('admitted students can see it; waiting, removed and unknown people cannot', async () => {
+    await at('teacher', 'background').set(picture());
+    const seen = await assertSucceeds(at('alex', 'background').once('value'));
+    assert(seen.child('w').val() === 1600);
+    for (const uid of ['bea', 'carl', 'stranger']) await assertFails(at(uid, 'background').once('value'));
+    await assertFails(at(null, 'background').once('value'));
+  });
+
+  test('only PNG and JPEG pictures are accepted, never links, scripts or other formats', async () => {
+    for (const img of [
+      'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+      'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+      'data:text/html;base64,PGgxPjwvaDE+',
+      'https://example.com/picture.png',
+      'javascript:alert(1)',
+      'AAAA',
+      '',
+    ]) {
+      await assertFails(at('teacher', 'background').set(picture({ img })));
+    }
+    await assertFails(at('teacher', 'background').set(picture({ img: 12345 })));
+  });
+
+  test('the picture has a size limit, exactly the one the app prepares for', async () => {
+    const prefix = 'data:image/png;base64,';
+    await assertSucceeds(at('teacher', 'background').set(picture({ img: prefix + 'A'.repeat(1_500_000 - prefix.length) })));
+    await assertFails(at('teacher', 'background').set(picture({ img: prefix + 'A'.repeat(1_500_001 - prefix.length) })));
+  });
+
+  test('it needs its size and a server time, and nothing extra', async () => {
+    const { w, ...withoutWidth } = picture();
+    await assertFails(at('teacher', 'background').set(withoutWidth));
+    const { at: _at, ...withoutTime } = picture();
+    await assertFails(at('teacher', 'background').set(withoutTime));
+    await assertFails(at('teacher', 'background').set(picture({ at: 1234 })));
+    await assertFails(at('teacher', 'background').set(picture({ w: 0 })));
+    await assertFails(at('teacher', 'background').set(picture({ h: 5000 })));
+    await assertFails(at('teacher', 'background').set(picture({ w: '1600' })));
+    await assertFails(at('teacher', 'background').set(picture({ name: 'n'.repeat(81) })));
+    await assertFails(at('teacher', 'background').set(picture({ extra: true })));
+  });
+
+  test('clearing the board leaves the background, and deleting the board takes it away', async () => {
+    await at('teacher', 'background').set(picture());
+    await assertSucceeds(at('teacher').update({ items: null, live: null }));
+    const kept = await at('teacher', 'background/w').once('value');
+    assert(kept.val() === 1600, 'the background is still there');
+    await assertSucceeds(at('teacher').remove());
+    // The owner has no rights over a board that no longer exists, so look with the rules switched off.
+    let left = 'not looked at';
+    await env.withSecurityRulesDisabled(async (context) => {
+      left = (await context.database().ref(`whiteboards/${CODE}/background`).once('value')).val();
+    });
+    assert(left === null, 'the background went with the board');
+  });
+});

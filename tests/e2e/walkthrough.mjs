@@ -8,8 +8,15 @@
 // Set BROWSER_PATH if Chrome or Edge isn't found, BASE_URL if the site is served somewhere else, and
 // SHOTS=some/folder to save screenshots along the way. Pages are always opened with ?emulator, so
 // nothing here touches the real database.
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
+
+const require = createRequire(import.meta.url);
+const jsQR = require('jsqr');
+const { PNG } = require('pngjs');
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:8080';
 const SHOTS = process.env.SHOTS ? `${process.env.SHOTS.replace(/[\\/]+$/, '')}/` : null;
@@ -60,10 +67,10 @@ async function until(fn, timeout = 8000) {
 
 const browser = await puppeteer.launch({ executablePath: BROWSER, headless: true, args: ['--no-first-run', '--disable-features=Translate'] });
 
-async function person(name, { width = 1280, height = 800, dark = false, touch = false } = {}) {
+async function person(name, { width = 1280, height = 800, dark = false, touch = false, scale = 1 } = {}) {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
-  await page.setViewport({ width, height, deviceScaleFactor: 1, hasTouch: touch, isMobile: touch });
+  await page.setViewport({ width, height, deviceScaleFactor: scale, hasTouch: touch, isMobile: touch });
   if (dark) await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
   page.on('console', (message) => {
     if (['error', 'warning'].includes(message.type())) logs.push(`[${name}] ${message.type()}: ${message.text()}`);
@@ -119,6 +126,99 @@ async function drawTouch(page, points) {
 const wave = (y, from = 0.1, to = 0.5) => Array.from({ length: 9 }, (_, i) => [from + ((to - from) * i) / 8, y + (i % 2 ? 0.04 : -0.04)]);
 const press = async (page, selector) => { await page.waitForSelector(selector, { visible: true, timeout: 8000 }); await page.click(selector); };
 const pick = (page, label) => page.click(`.tray button[title^="${label}"]`);
+
+// ---- Fixtures for the QR code and background checks -------------------------------------------
+// A PDF written by hand: each page is A4 portrait with a title and a 200 x 200 square in its own color.
+function makePdf(pages) {
+  const parts = [];
+  const offsets = [];
+  let length = 0;
+  const push = (text) => {
+    const buffer = Buffer.from(text, 'latin1');
+    parts.push(buffer);
+    length += buffer.length;
+  };
+  const object = (n, body) => {
+    offsets[n] = length;
+    push(`${n} 0 obj\n${body}\nendobj\n`);
+  };
+  push('%PDF-1.4\n');
+  object(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  object(2, `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`);
+  object(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  pages.forEach((page, i) => {
+    const content = `${page.rgb.join(' ')} rg 100 500 200 200 re f BT /F1 48 Tf 50 760 Td 0 0 0 rg (${page.title}) Tj ET`;
+    object(4 + i * 2, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`);
+    object(5 + i * 2, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+  const count = 4 + pages.length * 2;
+  const xref = length;
+  push(`xref\n0 ${count}\n0000000000 65535 f \n`);
+  for (let n = 1; n < count; n++) push(`${String(offsets[n]).padStart(10, '0')} 00000 n \n`);
+  push(`trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return Buffer.concat(parts);
+}
+
+const fixtureDir = mkdtempSync(join(tmpdir(), 'whiteboard-e2e-'));
+
+// 1600 x 900, blue on the left and yellow on the right, so where things land is easy to check.
+const twoColors = new PNG({ width: 1600, height: 900 });
+for (let y = 0; y < 900; y++) {
+  for (let x = 0; x < 1600; x++) {
+    const i = (y * 1600 + x) * 4;
+    const left = x < 800;
+    twoColors.data[i] = left ? 0 : 255;
+    twoColors.data[i + 1] = left ? 0 : 220;
+    twoColors.data[i + 2] = left ? 255 : 0;
+    twoColors.data[i + 3] = 255;
+  }
+}
+const twoColorsBytes = PNG.sync.write(twoColors);
+
+// Pure noise cannot be compressed, so this forces the app to shrink the picture to fit the database cap.
+const noisy = new PNG({ width: 2000, height: 1500 });
+for (let i = 0; i < noisy.data.length; i += 4) {
+  noisy.data[i] = (Math.random() * 256) | 0;
+  noisy.data[i + 1] = (Math.random() * 256) | 0;
+  noisy.data[i + 2] = (Math.random() * 256) | 0;
+  noisy.data[i + 3] = 255;
+}
+
+const fx = {
+  png: join(fixtureDir, 'two-colors.png'),
+  pdf: join(fixtureDir, 'worksheet.pdf'),
+  noisy: join(fixtureDir, 'noise.png'),
+  txt: join(fixtureDir, 'notes.txt'),
+  badPng: join(fixtureDir, 'damaged.png'),
+  badPdf: join(fixtureDir, 'damaged.pdf'),
+  bigPdf: join(fixtureDir, 'huge.pdf'),
+};
+writeFileSync(fx.png, twoColorsBytes);
+writeFileSync(fx.pdf, makePdf([{ title: 'Page 1', rgb: [1, 0, 0] }, { title: 'Page 2', rgb: [0, 0.6, 0] }, { title: 'Page 3', rgb: [0, 0, 1] }]));
+writeFileSync(fx.noisy, PNG.sync.write(noisy, { deflateLevel: 1 }));
+writeFileSync(fx.txt, 'not a picture');
+writeFileSync(fx.badPng, 'this is definitely not a picture');
+writeFileSync(fx.badPdf, '%PDF-1.4\nthis is not really a pdf');
+writeFileSync(fx.bigPdf, Buffer.alloc(31 * 1024 * 1024));
+
+// The color of one pixel of the picture behind the board, as a student sees it (fx and fy are 0 to 1).
+const sample = (page, fx, fy) =>
+  page.evaluate(
+    (x, y) => {
+      const img = document.querySelector('img.backdrop');
+      if (!img || img.hidden || !img.naturalWidth) return null;
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      return Array.from(ctx.getImageData(Math.floor(x * img.naturalWidth), Math.floor(y * img.naturalHeight), 1, 1).data.slice(0, 3));
+    },
+    fx,
+    fy,
+  );
+const near = (a, b, tolerance = 45) => Array.isArray(a) && a.every((value, i) => Math.abs(value - b[i]) <= tolerance);
+const closed = (page, timeout = 15000) => until(() => page.evaluate(() => !document.querySelector('dialog[open]')), timeout);
 
 try {
   // ---- Landing --------------------------------------------------------------------------
@@ -363,6 +463,194 @@ try {
   check('deleting a board returns the admin to their boards', await visible(admin.page, '#create-form'));
   check('students are told the board was closed', await visible(alex.page, '[data-screen="closed"]') && (await visible(bea.page, '[data-screen="closed"]')));
   await shot(alex, '12-student-closed');
+
+  // ---- QR code and backgrounds ----------------------------------------------------------
+  const host = await person('host', { scale: 2 });
+  await host.page.goto(`${BASE}/admin.html?emulator`, { waitUntil: 'domcontentloaded' });
+  await host.page.waitForSelector('#new-title', { visible: true });
+  await host.page.type('#new-title', 'Backgrounds');
+  await host.page.click('#create-form button[type="submit"]');
+  await visible(host.page, '#console');
+  const bgCode = (await text(host.page, '#code')).replace(/\s/g, '');
+
+  const pupil = await person('pupil');
+  await pupil.page.goto(`${BASE}/student.html?code=${bgCode}&emulator`, { waitUntil: 'domcontentloaded' });
+  await visible(pupil.page, '#join-form');
+  await pupil.page.type('#name', 'Alex');
+  await pupil.page.click('#join-form button[type="submit"]');
+  check('a student is on the board', await visible(pupil.page, 'canvas.layer-live'));
+  check('the board is exactly 16:9, so a 16:9 picture fills it', await pupil.page.$eval('.surface', (n) => n.clientWidth * 9 === n.clientHeight * 16));
+
+  // The QR code: take a picture of it, as a phone would, and read it.
+  await host.page.click('#show-qr');
+  check('the QR code dialog opens', await visible(host.page, 'dialog[open] .qr svg'));
+  await sleep(300);
+  await shot(host, '18-qr-dialog');
+  const qrImage = PNG.sync.read(await (await host.page.$('dialog[open] .qr svg')).screenshot());
+  const scanned = jsQR(new Uint8ClampedArray(qrImage.data), qrImage.width, qrImage.height);
+  check('scanning the QR code gives the join link', scanned?.data === `${BASE}/student.html?code=${bgCode}&emulator`, `got ${scanned?.data}`);
+  check('the large code is shown beside it', (await text(host.page, 'dialog[open] .code-huge')).replace(/\s/g, '') === bgCode);
+  await host.page.click('dialog[open] button[value="close"]');
+  check('the QR code dialog closes', await closed(host.page));
+  await host.page.click('#show-code');
+  check('clicking the code opens the same dialog', await visible(host.page, 'dialog[open] .qr svg'));
+  await host.page.click('dialog[open] button[value="close"]');
+  await closed(host.page);
+
+  const scanner = await person('scanner', { width: 390, height: 780, touch: true });
+  await scanner.page.goto(scanned.data, { waitUntil: 'domcontentloaded' });
+  check('the scanned link opens that board’s join screen', (await visible(scanner.page, '#join-form')) && (await text(scanner.page, '#join-title')) === 'Join Backgrounds');
+  await scanner.page.type('#name', 'Priya');
+  await scanner.page.click('#join-form button[type="submit"]');
+  check('and the person who scanned it joins the board', await visible(scanner.page, 'canvas.layer-live'));
+
+  // The background dialog, and the ways a file can be wrong.
+  await host.page.click('#background-button');
+  check('the background dialog opens', await visible(host.page, 'dialog[open] .bg-preview'));
+  check('use-as-background is off until a file is chosen', await host.page.$eval('dialog[open] button[type="submit"]', (b) => b.disabled));
+  await shot(host, '19-background-empty');
+  const chooseFile = async (path) => (await host.page.$('dialog[open] input[type="file"]')).uploadFile(path);
+  const alertText = () => host.page.$eval('dialog[open] [role="alert"]', (n) => n.textContent);
+
+  await chooseFile(fx.txt);
+  check('a file that is not a picture or PDF is refused plainly', await until(async () => (await alertText()).includes('Choose a picture')));
+  await chooseFile(fx.badPng);
+  check('a damaged picture is refused plainly', await until(async () => (await alertText()).includes('can’t be opened here')));
+  await chooseFile(fx.badPdf);
+  check('a damaged PDF is refused plainly', await until(async () => (await alertText()).includes('This PDF can’t be opened'), 20000));
+  await chooseFile(fx.bigPdf);
+  check('a file over 30 MB is refused', await until(async () => (await alertText()).includes('over 30 MB')));
+  check('none of that enabled the button', await host.page.$eval('dialog[open] button[type="submit"]', (b) => b.disabled));
+
+  // A picture dropped onto the dialog.
+  await host.page.evaluate(async (base64) => {
+    const data = new DataTransfer();
+    data.items.add(new File([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], 'dropped.png', { type: 'image/png' }));
+    const dialog = document.querySelector('dialog[open]');
+    dialog.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }));
+    dialog.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));
+  }, twoColorsBytes.toString('base64'));
+  check('a picture dropped on the dialog is picked up and previewed', await visible(host.page, 'dialog[open] .bg-preview canvas'));
+  check('and the old error is cleared', (await alertText()) === '');
+  await shot(host, '20-background-image-preview');
+  await host.page.click('dialog[open] button[type="submit"]');
+  check('the dialog closes once the background is set', await closed(host.page));
+
+  check('the student sees the background', await visible(pupil.page, 'img.backdrop'));
+  await sleep(500);
+  check('its left half is blue and its right half yellow', near(await sample(pupil.page, 0.25, 0.5), [0, 0, 255]) && near(await sample(pupil.page, 0.75, 0.5), [255, 220, 0]));
+  check('the admin sees it too', near(await sample(host.page, 0.25, 0.5), [0, 0, 255]));
+  check('so does the person who scanned the code, on a phone', await until(async () => near(await sample(scanner.page, 0.25, 0.5), [0, 0, 255])));
+  await shot(pupil, '21-student-with-picture');
+
+  const late = await person('late');
+  await late.page.goto(`${BASE}/student.html?code=${bgCode}&emulator`, { waitUntil: 'domcontentloaded' });
+  await visible(late.page, '#join-form');
+  await late.page.type('#name', 'Sam');
+  await late.page.click('#join-form button[type="submit"]');
+  check('someone who joins later sees the background straight away', await until(async () => near(await sample(late.page, 0.75, 0.5), [255, 220, 0])));
+  await late.context.close();
+
+  await host.page.reload({ waitUntil: 'domcontentloaded' });
+  await visible(host.page, '#console');
+  check('the background is still there after the admin reloads', await until(async () => near(await sample(host.page, 0.25, 0.5), [0, 0, 255])));
+
+  // Writing on top of it, and saving it.
+  const bgBox = await (await pupil.page.$('canvas.layer-live')).boundingBox();
+  await pupil.page.mouse.move(bgBox.x + bgBox.width * 0.2, bgBox.y + bgBox.height * 0.3);
+  await pupil.page.mouse.down();
+  await pupil.page.mouse.move(bgBox.x + bgBox.width * 0.7, bgBox.y + bgBox.height * 0.6, { steps: 12 });
+  await pupil.page.mouse.up();
+  check('students can draw on top of the picture, and the teacher sees it', await until(async () => (await ink(pupil.page)) > 0 && (await ink(host.page)) > 0));
+  check('the "pick a marker" hint stays away when there is a background', await pupil.page.$eval('.hint', (n) => n.hidden));
+  await shot(pupil, '22-student-drawing-on-picture');
+
+  await host.page.evaluate(() => {
+    const original = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) window.__download = { name: this.download, href: this.href };
+      else original.call(this);
+    };
+  });
+  await host.page.click('#save-image');
+  const bgSaved = await until(() =>
+    host.page.evaluate(async () => (window.__download ? Array.from(new Uint8Array(await (await fetch(window.__download.href)).arrayBuffer())) : null)),
+  );
+  const bgExport = bgSaved ? PNG.sync.read(Buffer.from(bgSaved)) : null;
+  const exportPixel = (x, y) => [...bgExport.data.slice((y * bgExport.width + x) * 4, (y * bgExport.width + x) * 4 + 3)];
+  check('the saved image includes the background behind the drawing', bgExport && bgExport.width === 1920 && near(exportPixel(100, 900), [0, 0, 255]) && near(exportPixel(1800, 900), [255, 220, 0]));
+
+  await host.page.click('#clear-board');
+  check('the clear confirmation says the background stays', (await text(host.page, 'dialog[open] p')).includes('The background stays'));
+  await host.page.click('dialog[open] button[value="ok"]');
+  check('clearing removes the drawing but not the picture', await until(async () => (await ink(pupil.page)) === 0 && near(await sample(pupil.page, 0.25, 0.5), [0, 0, 255])));
+
+  // A PDF page.
+  await host.page.click('#background-button');
+  await visible(host.page, 'dialog[open] .bg-preview');
+  check('the current background is shown when the dialog opens, with a way to remove it', (await visible(host.page, 'dialog[open] .bg-preview img')) && !!(await host.page.$('dialog[open] .btn-danger-quiet')));
+  await chooseFile(fx.pdf);
+  check('a PDF shows a page picker that knows the page count', (await visible(host.page, 'dialog[open] .pager', 20000)) && (await text(host.page, 'dialog[open] .pager')).includes('of 3'));
+  await sleep(600);
+  await shot(host, '23-background-pdf-page1');
+  await host.page.click('dialog[open] [aria-label="Next page"]');
+  await sleep(1200);
+  check('the page number follows the buttons', (await host.page.$eval('dialog[open] .page-input', (n) => n.value)) === '2');
+  await host.page.$eval('dialog[open] .page-input', (n) => (n.value = ''));
+  await host.page.type('dialog[open] .page-input', '3');
+  await host.page.keyboard.press('Enter');
+  await sleep(1000);
+  check('and typing a page number goes there', (await host.page.$eval('dialog[open] .page-input', (n) => n.value)) === '3');
+  await host.page.click('dialog[open] [aria-label="Previous page"]');
+  await sleep(1000);
+  await shot(host, '24-background-pdf-page2');
+  await host.page.click('dialog[open] button[type="submit"]');
+  check('the dialog closes once the PDF page is set', await closed(host.page));
+
+  // Page 2 is the green one. Its square sits at PDF (100..300, 500..700) on a 595 x 842 page.
+  check('the student sees page 2 (the green square)', !!(await until(async () => near(await sample(pupil.page, 200 / 595, 1 - 600 / 842), [0, 153, 0]))));
+  check('the page keeps its shape inside the board, with room either side', await pupil.page.evaluate(() => {
+    const img = document.querySelector('img.backdrop');
+    return Math.abs(img.naturalWidth / img.naturalHeight - 595 / 842) < 0.02 && img.offsetWidth < img.parentElement.clientWidth * 0.6 && img.offsetHeight === img.parentElement.clientHeight;
+  }));
+  await shot(pupil, '25-student-with-pdf-page');
+
+  // A picture too detailed for the database cap is shrunk until it fits, not refused.
+  await host.page.click('#background-button');
+  await visible(host.page, 'dialog[open] .bg-preview');
+  await chooseFile(fx.noisy);
+  check('a very detailed picture can still be chosen', await visible(host.page, 'dialog[open] .bg-preview canvas', 30000));
+  await host.page.click('dialog[open] button[type="submit"]');
+  check('and is shrunk to fit and shared', await closed(host.page, 90000));
+  const stored = await until(() => pupil.page.evaluate(() => { const img = document.querySelector('img.backdrop'); return !img.hidden && img.src.startsWith('data:image/') ? img.src.length : 0; }), 20000);
+  check('what was stored is under the database cap', stored > 1000 && stored <= 1_500_000, `length ${stored}`);
+
+  // Take it away.
+  await host.page.click('#background-button');
+  await visible(host.page, 'dialog[open] .btn-danger-quiet');
+  await host.page.click('dialog[open] .btn-danger-quiet');
+  check('removing the background closes the dialog', await closed(host.page));
+  check('and the student’s board goes back to plain white', await until(() => pupil.page.$eval('img.backdrop', (img) => img.hidden)));
+  check('and the hint comes back', await until(() => pupil.page.$eval('.hint', (n) => !n.hidden)));
+
+  // The dialogs on a phone.
+  const hostPhone = await person('host-phone', { width: 390, height: 780, scale: 2 });
+  await hostPhone.page.goto(`${BASE}/admin.html?emulator`, { waitUntil: 'domcontentloaded' });
+  await hostPhone.page.waitForSelector('#new-title', { visible: true });
+  await hostPhone.page.type('#new-title', 'Phone');
+  await hostPhone.page.click('#create-form button[type="submit"]');
+  await visible(hostPhone.page, '#console');
+  await hostPhone.page.click('#show-qr');
+  check('the QR code dialog fits a phone', await visible(hostPhone.page, 'dialog[open] .qr svg') && (await hostPhone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)));
+  await sleep(300);
+  await shot(hostPhone, '26-phone-qr');
+  await hostPhone.page.click('dialog[open] button[value="close"]');
+  await hostPhone.page.click('#open-panel');
+  await sleep(400);
+  await hostPhone.page.click('#background-button');
+  check('and so does the background dialog', await visible(hostPhone.page, 'dialog[open] .bg-preview') && (await hostPhone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)));
+  await sleep(300);
+  await shot(hostPhone, '27-phone-background-dialog');
 
   // ---- Small screens and dark mode ------------------------------------------------------
   const phoneAdmin = await person('phone-admin', { width: 390, height: 780 });

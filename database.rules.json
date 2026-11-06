@@ -486,6 +486,16 @@
             "$other": { ".validate": false }
           }
         },
+        "background": {
+          ".read": "auth != null && !root.child('whiteboards/' + $code + '/banned/' + auth.uid).exists() && root.child('whiteboards/' + $code + '/students/' + auth.uid + '/status').val() === 'active'",
+          ".validate": "newData.hasChildren(['img', 'w', 'h', 'at'])",
+          "img": { ".validate": "newData.isString() && newData.val().length <= 1500000 && (newData.val().beginsWith('data:image/png;base64,') || newData.val().beginsWith('data:image/jpeg;base64,'))" },
+          "w": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 4096" },
+          "h": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 4096" },
+          "name": { ".validate": "newData.isString() && newData.val().length <= 80" },
+          "at": { ".validate": "newData.isNumber() && newData.val() === now" },
+          "$other": { ".validate": false }
+        },
         "$other": { ".validate": false }
       }
     }

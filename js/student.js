@@ -3,6 +3,7 @@
 // Three things decide what the student sees, and each is watched live: the board's settings, their own
 // student record, and their own removal record. access.js turns those into a screen.
 import { abilityMessage, getAbility, initialStatus, studentScreen } from './access.js';
+import { parseBackground } from './background.js';
 import { createBoard } from './board.js';
 import { wireCodeForm } from './code-form.js';
 import { announce, joinBoard, watch, watchConnection } from './db.js';
@@ -44,6 +45,7 @@ async function run() {
   let board = null;
   let stopTray = null;
   let stopWaiting = null;
+  let stopBackground = null;
   let joining = false;
   const loaded = new Set();
 
@@ -123,6 +125,7 @@ async function run() {
         onPeople: renderPeople,
       });
       stopTray = mountTray($('#tray'), board);
+      stopBackground = watch(code, 'background', (value) => board?.setBackground(parseBackground(value)), watchStopped);
     }
     board.setOwner(meta.owner);
 
@@ -151,9 +154,11 @@ async function run() {
   function leaveBoard() {
     if (!board) return;
     stopTray();
+    stopBackground?.();
     board.destroy();
     board = null;
     stopTray = null;
+    stopBackground = null;
   }
 
   // Who is here, shown as a row of initials in the top bar. The teacher comes first.
