@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#dde2e8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171c22" media="(prefers-color-scheme: dark)">
+  <title>EduTools Whiteboard</title>
+  <meta name="description" content="A shared whiteboard for the classroom. Start a board, share its code, and everyone draws and writes on it together.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/shantell-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/atkinson-hyperlegible-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/atkinson-hyperlegible-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="landing-page">
+  <canvas id="doodle" class="doodle" aria-hidden="true"></canvas>
+
+  <main class="landing">
+    <a class="brand" href="./" aria-label="EduTools Whiteboard home">
+      <span data-icon="board" data-icon-size="30"></span>
+      <span>Whiteboard</span>
+    </a>
+
+    <div class="landing-grid">
+      <section class="hero" aria-labelledby="hero-title">
+        <h1 id="hero-title">One board for the whole class</h1>
+        <p class="lede">Start a board, share its code, and everyone draws and writes on it together. You choose who’s in.</p>
+        <p><a class="btn btn-primary btn-large" id="start" href="admin.html">Start a board</a></p>
+        <p class="fine">Students only type a name. There are no accounts.</p>
+      </section>
+
+      <form class="join-board" id="join" novalidate aria-labelledby="join-title">
+        <h2 id="join-title">Join a board</h2>
+        <div>
+          <label for="code">Board code</label>
+          <input class="code-input" id="code" name="code" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="K7P3QM" aria-describedby="code-error code-help">
+          <p class="field-error" id="code-error" role="alert"></p>
+        </div>
+        <button class="btn btn-primary" type="submit">Join board</button>
+        <p class="fine" id="code-help">Your teacher gives you the code.</p>
+      </form>
+    </div>
+  </main>
+
+  <noscript><p class="noscript">Whiteboard needs JavaScript. Turn it on in your browser, then reload this page.</p></noscript>
+  <script type="module" src="js/index.js"></script>
+</body>
+</html>

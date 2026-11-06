@@ -1,0 +1,7 @@
+node_modules/
+_site/
+
+# Firebase emulator logs and local state
+*-debug.log
+.firebase/
+tests/e2e/shots/

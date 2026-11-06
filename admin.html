@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#dde2e8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171c22" media="(prefers-color-scheme: dark)">
+  <title>Your boards - Whiteboard</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+  <link rel="preload" href="assets/fonts/shantell-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/atkinson-hyperlegible-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/atkinson-hyperlegible-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <main class="screen" data-screen="loading">
+    <p class="loading" role="status">Loading…</p>
+  </main>
+
+  <main class="screen" data-screen="error" hidden>
+    <div class="screen-body">
+      <h1>This page didn’t load</h1>
+      <p id="error-detail"></p>
+      <div class="screen-actions"><a class="btn btn-primary" href="">Try again</a></div>
+    </div>
+  </main>
+
+  <main class="screen" data-screen="message" hidden>
+    <div class="screen-body">
+      <h1 id="message-title"></h1>
+      <p id="message-body"></p>
+      <div class="screen-actions" id="message-actions"></div>
+    </div>
+  </main>
+
+  <main class="screen" data-screen="boards" hidden>
+    <div class="screen-body wide">
+      <a class="brand" href="./" aria-label="EduTools Whiteboard home">
+        <span data-icon="board" data-icon-size="30"></span>
+        <span>Whiteboard</span>
+      </a>
+      <h1>Your boards</h1>
+      <div class="boards-layout">
+        <form id="create-form" novalidate aria-labelledby="create-title">
+          <h2 id="create-title">Start a board</h2>
+          <div>
+            <label for="new-title">Board name</label>
+            <input id="new-title" name="title" type="text" maxlength="80" autocomplete="off" placeholder="Maths 3B" aria-describedby="new-error">
+            <p class="field-error" id="new-error" role="alert"></p>
+          </div>
+          <label class="check"><input type="checkbox" id="new-approval" name="approval"><span>Approve each student before they join</span></label>
+          <button class="btn btn-primary" type="submit">Start board</button>
+        </form>
+
+        <section aria-labelledby="list-title">
+          <h2 id="list-title">Boards from this browser</h2>
+          <p class="empty" id="boards-empty" hidden>You haven’t started a board in this browser yet. Start one and it will be listed here.</p>
+          <ul class="board-list" id="board-list"></ul>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <div class="app" id="console" data-screen="console" hidden>
+    <a class="skip-link" href="#stage">Skip to the board</a>
+    <p class="visually-hidden" id="announce" role="status" aria-live="polite"></p>
+    <header class="topbar">
+      <a class="brand brand-compact" id="boards-link" href="admin.html" title="All your boards" aria-label="All your boards">
+        <span data-icon="board" data-icon-size="28"></span>
+      </a>
+      <h1 class="board-title" id="board-title"></h1>
+
+      <div class="code-chip">
+        <span class="code-label">Join code</span>
+        <button class="code-button" id="show-code" type="button" title="Show the code in large type">
+          <span class="code" id="code" translate="no"></span>
+        </button>
+        <button class="btn btn-small" id="copy-link" type="button" data-icon="copy" data-icon-size="18">Copy link</button>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" id="lock-switch" role="switch">
+        <span class="switch-track" aria-hidden="true"></span>
+        <span class="switch-label">Lock board</span>
+      </label>
+
+      <button class="btn" id="open-panel" type="button" aria-expanded="false" aria-controls="panel" data-icon="users">
+        Students <span class="count" id="student-count">0</span>
+      </button>
+    </header>
+
+    <p class="banner" id="banner" role="status" hidden></p>
+
+    <div class="workspace">
+      <main class="stage" id="stage"></main>
+
+      <aside class="panel" id="panel" aria-labelledby="panel-title">
+        <header class="panel-head">
+          <h2 id="panel-title">Students</h2>
+          <button class="btn btn-icon" id="close-panel" type="button" aria-label="Close students" data-icon="x"></button>
+        </header>
+
+        <div class="panel-scroll">
+          <label class="switch switch-wide">
+            <input type="checkbox" id="approve-switch" role="switch">
+            <span class="switch-track" aria-hidden="true"></span>
+            <span class="switch-text">
+              <span class="switch-label">Approve new students</span>
+              <span class="switch-help">New students wait until you admit them.</span>
+            </span>
+          </label>
+
+          <div class="roster" id="roster"></div>
+        </div>
+
+        <footer class="panel-foot">
+          <button class="btn" id="save-image" type="button" data-icon="download" data-icon-size="18">Save as image</button>
+          <button class="btn" id="clear-board" type="button" data-icon="eraser" data-icon-size="18">Clear board</button>
+          <button class="btn btn-danger-quiet" id="delete-board" type="button" data-icon="trash" data-icon-size="18">Delete board</button>
+        </footer>
+      </aside>
+    </div>
+
+    <p class="rotate-hint">Turn your phone sideways for a bigger board.</p>
+    <div class="tray-wrap" id="tray"></div>
+    <div class="scrim" id="scrim"></div>
+  </div>
+
+  <noscript><p class="noscript">Whiteboard needs JavaScript. Turn it on in your browser, then reload this page.</p></noscript>
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

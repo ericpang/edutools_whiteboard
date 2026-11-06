@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#dde2e8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171c22" media="(prefers-color-scheme: dark)">
+  <title>Join a board - Whiteboard</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+  <link rel="preload" href="assets/fonts/shantell-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/atkinson-hyperlegible-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/atkinson-hyperlegible-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <main class="screen" data-screen="loading">
+    <p class="loading" role="status">Loading…</p>
+  </main>
+
+  <main class="screen" data-screen="error" hidden>
+    <div class="screen-body">
+      <h1>This page didn’t load</h1>
+      <p id="error-detail"></p>
+      <div class="screen-actions"><a class="btn btn-primary" href="">Try again</a></div>
+    </div>
+  </main>
+
+  <main class="screen" data-screen="code" hidden>
+    <form class="screen-body" id="code-form" novalidate aria-labelledby="code-title">
+      <h1 id="code-title">Join a board</h1>
+      <div>
+        <label for="code">Board code</label>
+        <input class="code-input" id="code" name="code" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="K7P3QM" aria-describedby="code-error">
+        <p class="field-error" id="code-error" role="alert"></p>
+      </div>
+      <div class="screen-actions"><button class="btn btn-primary" type="submit">Join board</button></div>
+    </form>
+  </main>
+
+  <main class="screen" data-screen="not-found" hidden>
+    <div class="screen-body">
+      <h1 id="notfound-title">No board has that code</h1>
+      <p>Check the code with your teacher. Board codes have 6 letters and numbers.</p>
+      <div class="screen-actions"><a class="btn btn-primary" href="./">Try another code</a></div>
+    </div>
+  </main>
+
+  <main class="screen" data-screen="join" hidden>
+    <form class="screen-body" id="join-form" novalidate aria-labelledby="join-title">
+      <h1 id="join-title">Join this board</h1>
+      <p id="join-note" hidden>Your teacher will let you in once you’ve joined.</p>
+      <div>
+        <label for="name">Your name</label>
+        <input class="name-input" id="name" name="name" type="text" maxlength="24" autocomplete="off" spellcheck="false" aria-describedby="name-error" placeholder="Alex">
+        <p class="field-error" id="name-error" role="alert"></p>
+      </div>
+      <div class="screen-actions"><button class="btn btn-primary" type="submit">Join board</button></div>
+    </form>
+  </main>
+
+  <main class="screen" data-screen="waiting" hidden>
+    <div class="screen-body">
+      <h1>Waiting for your teacher to let you in</h1>
+      <p>You joined as <strong id="waiting-name" translate="no"></strong>. Keep this page open. The board appears as soon as you’re admitted.</p>
+      <div class="screen-actions"><a class="btn" href="./">Leave</a></div>
+    </div>
+  </main>
+
+  <main class="screen" data-screen="removed" hidden>
+    <div class="screen-body">
+      <h1>You’ve been removed from this board</h1>
+      <p>Ask your teacher if you think this was a mistake. If they let you back in, this page updates by itself.</p>
+      <div class="screen-actions"><a class="btn btn-primary" href="./">Join another board</a></div>
+    </div>
+  </main>
+
+  <main class="screen" data-screen="closed" hidden>
+    <div class="screen-body">
+      <h1>This board has been closed</h1>
+      <p>Your teacher ended it. Ask them for a new code.</p>
+      <div class="screen-actions"><a class="btn btn-primary" href="./">Join another board</a></div>
+    </div>
+  </main>
+
+  <div class="app" data-screen="board" hidden>
+    <a class="skip-link" href="#stage">Skip to the board</a>
+    <header class="topbar">
+      <a class="brand brand-compact" href="./" title="Whiteboard home" aria-label="Whiteboard home">
+        <span data-icon="board" data-icon-size="28"></span>
+      </a>
+      <h1 class="board-title" id="board-title"></h1>
+      <div class="here">
+        <ul class="avatars" id="people" aria-label="People on this board"></ul>
+        <span class="here-count" id="people-count"></span>
+      </div>
+      <a class="btn" href="./" data-icon="leave" data-icon-size="18"><span class="btn-text">Leave</span></a>
+    </header>
+
+    <p class="banner" id="banner" role="status" hidden></p>
+
+    <div class="workspace">
+      <main class="stage" id="stage"></main>
+    </div>
+
+    <p class="rotate-hint">Turn your phone sideways for a bigger board.</p>
+    <div class="tray-wrap" id="tray"></div>
+  </div>
+
+  <noscript><p class="noscript">Whiteboard needs JavaScript. Turn it on in your browser, then reload this page.</p></noscript>
+  <script type="module" src="js/student.js"></script>
+</body>
+</html>
